@@ -1,0 +1,29 @@
+# Binaries
+wings
+*.exe
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data directories
+data/
+logs/
+tmp/
+
+# Config (contains secrets)
+config.yml
+
+# Go
+vendor/
+
+# Misc
+*.log
+*.db
