@@ -45,7 +45,7 @@ var (
 
 var rootCommand = &cobra.Command{
 	Use:   "wings",
-	Short: "Sodium Daemon: Runs the API server allowing programmatic control of game servers.",
+	Short: "Sodium Reaction: Runs the API server allowing programmatic control of game servers.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		initConfig()
 		initLogging()
@@ -63,7 +63,7 @@ var versionCommand = &cobra.Command{
 	Use:   "version",
 	Short: "Prints the current executable version and exits.",
 	Run: func(cmd *cobra.Command, _ []string) {
-		fmt.Printf("Sodium Daemon v%s\nCopyright © 2025 zt3xdv (tsumugi_dev)\n", system.Version)
+		fmt.Printf("Sodium Reaction v%s\nCopyright © 2025 zt3xdv (tsumugi_dev)\n", system.Version)
 	},
 }
 
@@ -436,11 +436,11 @@ func initLogging() {
 // Prints the wings logo, nothing special here!
 func printLogo() {
 	fmt.Printf(colorstring.Color(`
-[cyan][bold]  ___         _ _             
- / __| ___  _| (_)_  _ _ __  
- \__ \/ _ \/ _` + "`" + ` | | || | '  \ 
- |___/\___/\__,_|_|\_,_|_|_|_|[reset]
-                              [bold]v%s[reset]
+[cyan][bold]  ___         _ _              ___             _   _          
+ / __| ___  _| (_)_  _ _ __  | _ \___ __ _ __| |_(_)___ _ _  
+ \__ \/ _ \/ _` + "`" + ` | | || | '  \ |   / -_) _` + "`" + ` / _|  _| / _ \ ' \ 
+ |___/\___/\__,_|_|\_,_|_|_|_||_|_\___\__,_\__|\__|_\___/_||_|[reset]
+                                                    [bold]v%s[reset]
 
  [dark_gray]Server daemon for game server management[reset]
  [dark_gray]Copyright © 2025 zt3xdv (tsumugi_dev)[reset]

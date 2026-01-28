@@ -1,4 +1,4 @@
-# Sodium
+# Sodium Reaction
 
 Server daemon for game server management. Provides an HTTP API for managing server instances, backups, file management, and real-time console access.
 
