@@ -9,6 +9,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -45,7 +46,7 @@ var (
 
 var rootCommand = &cobra.Command{
 	Use:   "wings",
-	Short: "Sodium Reaction: Runs the API server allowing programmatic control of game servers.",
+	Short: "Sodium Daemon: Runs the API server allowing programmatic control of game servers.",
 	PreRun: func(cmd *cobra.Command, args []string) {
 		initConfig()
 		initLogging()
@@ -63,7 +64,7 @@ var versionCommand = &cobra.Command{
 	Use:   "version",
 	Short: "Prints the current executable version and exits.",
 	Run: func(cmd *cobra.Command, _ []string) {
-		fmt.Printf("Sodium Reaction v%s\nCopyright © 2025 zt3xdv (tsumugi_dev)\n", system.Version)
+		fmt.Printf("Sodium Daemon v%s\nCopyright © 2025 zt3xdv (tsumugi_dev)\n", system.Version)
 	},
 }
 
@@ -271,8 +272,8 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 	// Wait until all the servers are ready to go before we fire up the SFTP and HTTP servers.
 	pool.StopWait()
 	defer func() {
-		// Cancel the context on all the running servers at this point, even though the
-		// program is just shutting down.
+		// Cancel the context on all the running servers at this point, as a
+		// safety net in case shutdown doesn't reach the cleanup below.
 		for _, s := range manager.All() {
 			s.CtxCancel()
 		}
@@ -369,25 +370,59 @@ func rootCmdRun(cmd *cobra.Command, _ []string) {
 				log.WithError(err).Error("failed to serve autocert http server")
 			}
 		}()
-		// Start the main http server with TLS using autocert.
-		if err := s.ListenAndServeTLS("", ""); err != nil {
-			log.WithFields(log.Fields{"auto_tls": true, "tls_hostname": tlshostname, "error": err}).Fatal("failed to configure HTTP server using auto-tls")
-		}
-		return
+	} else if api.Ssl.Enabled {
+		// Check if main http server should run with TLS.
+		go func() {
+			if err := s.ListenAndServeTLS(api.Ssl.CertificateFile, api.Ssl.KeyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.WithFields(log.Fields{"auto_tls": false, "error": err}).Fatal("failed to configure HTTPS server")
+			}
+		}()
+	} else {
+		s.TLSConfig = nil
 	}
 
-	// Check if main http server should run with TLS. Otherwise, reset the TLS
-	// config on the server and then serve it over normal HTTP.
-	if api.Ssl.Enabled {
-		if err := s.ListenAndServeTLS(api.Ssl.CertificateFile, api.Ssl.KeyFile); err != nil {
-			log.WithFields(log.Fields{"auto_tls": false, "error": err}).Fatal("failed to configure HTTPS server")
+	// Start the HTTP server in a goroutine so we can handle shutdown signals.
+	go func() {
+		var err error
+		if autotls {
+			err = s.ListenAndServeTLS("", "")
+		} else if api.Ssl.Enabled {
+			// Already started above.
+			return
+		} else {
+			err = s.ListenAndServe()
 		}
-		return
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.WithField("error", err).Fatal("failed to configure HTTP server")
+		}
+	}()
+
+	// Wait for an interrupt signal to gracefully shut down.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Info("received shutdown signal, starting graceful shutdown...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	// Gracefully shut down the HTTP server first (stop accepting new requests,
+	// wait for in-flight requests to complete).
+	if err := s.Shutdown(shutdownCtx); err != nil {
+		log.WithField("error", err).Error("http server shutdown error")
 	}
-	s.TLSConfig = nil
-	if err := s.ListenAndServe(); err != nil {
-		log.WithField("error", err).Fatal("failed to configure HTTP server")
+
+	// Persist final server states before exiting.
+	if err := manager.PersistStates(); err != nil {
+		log.WithField("error", err).Warn("failed to persist server states during shutdown")
 	}
+
+	// Cancel context on all running servers.
+	for _, srv := range manager.All() {
+		srv.CtxCancel()
+	}
+
+	log.Info("graceful shutdown complete")
 }
 
 // Reads the configuration from the disk and then sets up the global singleton
@@ -436,11 +471,11 @@ func initLogging() {
 // Prints the wings logo, nothing special here!
 func printLogo() {
 	fmt.Printf(colorstring.Color(`
-[cyan][bold]  ___         _ _              ___             _   _          
- / __| ___  _| (_)_  _ _ __  | _ \___ __ _ __| |_(_)___ _ _  
- \__ \/ _ \/ _` + "`" + ` | | || | '  \ |   / -_) _` + "`" + ` / _|  _| / _ \ ' \ 
- |___/\___/\__,_|_|\_,_|_|_|_||_|_\___\__,_\__|\__|_\___/_||_|[reset]
-                                                    [bold]v%s[reset]
+[cyan][bold]  ___         _ _             
+ / __| ___  _| (_)_  _ _ __  
+ \__ \/ _ \/ _` + "`" + ` | | || | '  \ 
+ |___/\___/\__,_|_|\_,_|_|_|_|[reset]
+                              [bold]v%s[reset]
 
  [dark_gray]Server daemon for game server management[reset]
  [dark_gray]Copyright © 2025 zt3xdv (tsumugi_dev)[reset]

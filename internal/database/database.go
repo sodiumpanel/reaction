@@ -2,6 +2,7 @@ package database
 
 import (
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"emperror.dev/errors"
@@ -36,13 +37,13 @@ func Initialize() error {
 	if sql, err := db.DB(); err != nil {
 		return errors.WithStack(err)
 	} else {
-		sql.SetMaxOpenConns(1)
+		sql.SetMaxOpenConns(runtime.NumCPU())
 		sql.SetConnMaxLifetime(time.Hour)
 	}
-	if tx := db.Exec("PRAGMA synchronous = OFF"); tx.Error != nil {
+	if tx := db.Exec("PRAGMA journal_mode = WAL"); tx.Error != nil {
 		return errors.WithStack(tx.Error)
 	}
-	if tx := db.Exec("PRAGMA journal_mode = MEMORY"); tx.Error != nil {
+	if tx := db.Exec("PRAGMA synchronous = NORMAL"); tx.Error != nil {
 		return errors.WithStack(tx.Error)
 	}
 	if err := db.AutoMigrate(&models.Activity{}); err != nil {

@@ -25,7 +25,7 @@ import (
 type Manager struct {
 	mu      sync.RWMutex
 	client  remote.Client
-	servers []*Server
+	servers map[string]*Server
 }
 
 // NewManager returns a new server manager instance. This will boot up all the
@@ -43,7 +43,7 @@ func NewManager(ctx context.Context, client remote.Client) (*Manager, error) {
 // loading any of the servers from the disk. This allows the caller to set their
 // own servers into the collection as needed.
 func NewEmptyManager(client remote.Client) *Manager {
-	return &Manager{client: client}
+	return &Manager{client: client, servers: make(map[string]*Server)}
 }
 
 // Client returns the HTTP client interface that allows interaction with the
@@ -63,9 +63,9 @@ func (m *Manager) Len() int {
 func (m *Manager) Keys() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	keys := make([]string, len(m.servers))
-	for i, s := range m.servers {
-		keys[i] = s.ID()
+	keys := make([]string, 0, len(m.servers))
+	for id := range m.servers {
+		keys = append(keys, id)
 	}
 	return keys
 }
@@ -74,7 +74,11 @@ func (m *Manager) Keys() []string {
 // is passed through.
 func (m *Manager) Put(s []*Server) {
 	m.mu.Lock()
-	m.servers = s
+	newMap := make(map[string]*Server, len(s))
+	for _, srv := range s {
+		newMap[srv.ID()] = srv
+	}
+	m.servers = newMap
 	m.mu.Unlock()
 }
 
@@ -82,23 +86,27 @@ func (m *Manager) Put(s []*Server) {
 func (m *Manager) All() []*Server {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.servers
+	out := make([]*Server, 0, len(m.servers))
+	for _, s := range m.servers {
+		out = append(out, s)
+	}
+	return out
 }
 
 // Add adds an item to the collection store.
 func (m *Manager) Add(s *Server) {
 	m.mu.Lock()
-	m.servers = append(m.servers, s)
+	m.servers[s.ID()] = s
 	m.mu.Unlock()
 }
 
 // Get returns a single server instance and a boolean value indicating if it was
 // found in the global collection or not.
 func (m *Manager) Get(uuid string) (*Server, bool) {
-	match := m.Find(func(server *Server) bool {
-		return server.ID() == uuid
-	})
-	return match, match != nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s, ok := m.servers[uuid]
+	return s, ok
 }
 
 // Filter returns only those items matching the filter criteria.
@@ -131,13 +139,11 @@ func (m *Manager) Find(filter func(match *Server) bool) *Server {
 func (m *Manager) Remove(filter func(match *Server) bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	r := make([]*Server, 0)
-	for _, v := range m.servers {
-		if !filter(v) {
-			r = append(r, v)
+	for id, v := range m.servers {
+		if filter(v) {
+			delete(m.servers, id)
 		}
 	}
-	m.servers = r
 }
 
 // PersistStates writes the current environment states to the disk for each

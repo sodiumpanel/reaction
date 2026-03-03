@@ -54,6 +54,9 @@ func Configure(m *wserver.Manager, client remote.Client) *gin.Engine {
 	// and requests are authenticated through a JWT the panel issues to the other daemon.
 	router.POST("/api/transfers", postTransfers)
 
+	// Health check endpoint — no authentication required.
+	router.GET("/api/health", getHealthCheck)
+
 	// All the routes beyond this mount will use an authorization middleware
 	// and will not be accessible without the correct Authorization header provided.
 	protected := router.Use(middleware.RequireAuthorization())

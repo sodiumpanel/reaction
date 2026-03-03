@@ -11,6 +11,7 @@ import (
 	"github.com/pterodactyl/wings/router/tokens"
 
 	"github.com/pterodactyl/wings/config"
+	"github.com/pterodactyl/wings/environment"
 	"github.com/pterodactyl/wings/router/middleware"
 	"github.com/pterodactyl/wings/server"
 	"github.com/pterodactyl/wings/server/installer"
@@ -186,4 +187,30 @@ func postDeauthorizeUser(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// getHealthCheck returns a lightweight health status including Docker
+// connectivity and the number of tracked servers.
+func getHealthCheck(c *gin.Context) {
+	m := middleware.ExtractManager(c)
+
+	dockerOk := true
+	cli, err := environment.Docker()
+	if err != nil {
+		dockerOk = false
+	} else if _, err := cli.Ping(c.Request.Context()); err != nil {
+		dockerOk = false
+	}
+
+	status := http.StatusOK
+	if !dockerOk {
+		status = http.StatusServiceUnavailable
+	}
+
+	c.JSON(status, gin.H{
+		"healthy":      dockerOk,
+		"version":      system.Version,
+		"server_count": m.Len(),
+		"docker":       dockerOk,
+	})
 }
